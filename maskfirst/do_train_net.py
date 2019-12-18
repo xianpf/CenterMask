@@ -145,9 +145,22 @@ def do_train(
         )
     )
 
+from torch import nn
+from maskrcnn_benchmark.modeling.backbone import resnet
+
+class MaskFirst(nn.Module):
+    def __init__(self, cfg):
+        super(MaskFirst, self).__init__()
+        self.cfg = cfg
+        self.r50 = resnet.ResNet(cfg)
+
+    def forward(self, image, targets=None):
+        import pdb; pdb.set_trace()
+        print(type(image), type(targets))
 
 def train(cfg, local_rank, distributed):
-    model = build_detection_model(cfg)
+    # model = build_detection_model(cfg)
+    model = MaskFirst(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
@@ -298,7 +311,7 @@ def main():
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     parser.add_argument(
         "--config-file",
-        default="tools/centermask_R_50_FPN_1x.yaml",
+        default="mac/mask_first.yaml",
         metavar="FILE",
         help="path to config file",
         type=str,
@@ -331,6 +344,7 @@ def main():
 
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    # cfg.merge_from_list(['OUTPUT_DIR', 'run/fcos_imprv_R_50_FPN_1x/vals_1'])
     cfg.freeze()
 
     output_dir = cfg.OUTPUT_DIR
