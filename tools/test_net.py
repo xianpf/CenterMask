@@ -22,7 +22,8 @@ def main():
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Inference")
     parser.add_argument(
         "--config-file",
-        default="/private/home/fmassa/github/detectron.pytorch_v2/configs/e2e_faster_rcnn_R_50_C4_1x_caffe2.yaml",
+        default="run/CenterMask-R-50-FPN-1x/new_config.yml",
+        # default="/private/home/fmassa/github/detectron.pytorch_v2/configs/e2e_faster_rcnn_R_50_C4_1x_caffe2.yaml",
         metavar="FILE",
         help="path to config file",
     )
@@ -46,8 +47,13 @@ def main():
         )
         synchronize()
 
-    cfg.merge_from_file(args.config_file)
-    cfg.merge_from_list(args.opts)
+    # cfg.merge_from_file(args.config_file)
+    cfg.merge_from_file("run/CenterMask-R-50-FPN-1x/new_config.yml")
+    # cfg.merge_from_list(args.opts)
+    cfg.merge_from_list([
+        'OUTPUT_DIR', 'run/test/t1',
+        'MODEL.WEIGHT', 'run/CenterMask-R-50-FPN-1x/model_final.pth',
+    ])
     cfg.freeze()
 
     save_dir = ""

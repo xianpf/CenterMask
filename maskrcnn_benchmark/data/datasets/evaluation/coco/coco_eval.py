@@ -51,6 +51,7 @@ def do_coco_evaluation(
 
     results = COCOResults(*iou_types)
     logger.info("Evaluating predictions")
+    coco_evaluators = []
     for iou_type in iou_types:
         with tempfile.NamedTemporaryFile() as f:
             file_path = f.name
@@ -60,11 +61,12 @@ def do_coco_evaluation(
                 dataset.coco, coco_results[iou_type], file_path, iou_type
             )
             results.update(res)
+            coco_evaluators.append(res)
     logger.info(results)
     check_expected_results(results, expected_results, expected_results_sigma_tol)
     if output_folder:
         torch.save(results, os.path.join(output_folder, "coco_results.pth"))
-    return results, coco_results
+    return results, coco_results, coco_evaluators
 
 
 def prepare_for_coco_detection(predictions, dataset):
@@ -136,7 +138,8 @@ def prepare_for_coco_segmentation(predictions, dataset):
         # rles = prediction.get_field('mask')
 
         rles = [
-            mask_util.encode(np.array(mask[0, :, :, np.newaxis], order="F"))[0]
+            # mask_util.encode(np.array(mask[0, :, :, np.newaxis], order="F"))[0]
+            mask_util.encode(np.array(mask[0, :, :, np.newaxis], order="F", dtype=np.uint8))[0]
             for mask in masks
         ]
         for rle in rles:
