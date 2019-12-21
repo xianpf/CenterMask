@@ -183,7 +183,7 @@ class MaskFirst(nn.Module):
         # per_proposal_mask 应适当多层 3～5层3*3
         # self.mask_init_conv = nn.Conv2d(256+1, 1, 3, padding=1)
         self.mask_init_conv = nn.Conv2d(256+1, 1, 7, padding=3)
-        self.score = nn.Conv2d(256+1, 1, 1)
+        self.score = nn.Conv2d(256, 1, 1)
         # self.criterion = nn.CrossEntropyLoss()
         # 这里先用L1 loss 后续测试l2 loss 以及cross entropy
 
