@@ -272,7 +272,8 @@ MODEL:
     PRETRAINED: ''
     USE_GN: false
   WEIGHT: catalog://ImageNetPretrained/MSRA/R-50
-OUTPUT_DIR: run/CenterMask-R-50-FPN-1x
+# OUTPUT_DIR: run/CenterMask-R-50-FPN-1x
+OUTPUT_DIR: run/try_1
 PATHS_CATALOG: /home/xianr/TurboRuns/CenterMask/maskrcnn_benchmark/config/paths_catalog.py
 SOLVER:
   BASE_LR: 0.01
