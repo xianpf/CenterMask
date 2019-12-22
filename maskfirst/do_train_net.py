@@ -89,7 +89,8 @@ def do_train(
         loss_dict = model(images, targets)
 
         losses = sum(loss for loss in loss_dict.values())
-        if losses > 1e5:
+        # print('iteration:{}, losses:{}'.format(iteration, losses))
+        if losses > 1e5 or torch.isnan(losses):
             import pdb; pdb.set_trace()
 
         # reduce losses over all GPUs for logging purposes
@@ -146,17 +147,224 @@ def do_train(
     )
 
 from torch import nn
+import torch.nn.functional as F
 from maskrcnn_benchmark.modeling.backbone import resnet
+from maskrcnn_benchmark.modeling.backbone import fpn as fpn_module
+from maskrcnn_benchmark.modeling.make_layers import conv_with_kaiming_uniform
+from maskrcnn_benchmark.modeling.rpn.fcos.fcos import FCOSModule
+from maskrcnn_benchmark.structures.bounding_box import BoxList
 
 class MaskFirst(nn.Module):
     def __init__(self, cfg):
         super(MaskFirst, self).__init__()
         self.cfg = cfg
         self.r50 = resnet.ResNet(cfg)
+        in_channels_stage2 = cfg.MODEL.RESNETS.RES2_OUT_CHANNELS
+        out_channels = cfg.MODEL.RESNETS.BACKBONE_OUT_CHANNELS
+        in_channels_p6p7 = in_channels_stage2 * 8 if cfg.MODEL.RETINANET.USE_C5 \
+            else out_channels
+        self.fpn = fpn_module.FPN(
+            in_channels_list=[
+                0,
+                in_channels_stage2 * 2,
+                in_channels_stage2 * 4,
+                in_channels_stage2 * 8,
+            ],
+            out_channels=out_channels,
+            conv_block=conv_with_kaiming_uniform(
+                cfg.MODEL.FPN.USE_GN, cfg.MODEL.FPN.USE_RELU
+            ),
+            top_blocks=fpn_module.LastLevelP6P7(in_channels_p6p7, out_channels),
+        )
+        self.loss_evaluators = []
+        self.fcos = FCOSModule(cfg, 256)
+        self.p7p6conv = nn.Conv2d(256, 1, 1)
+        self.mask_conv_0 = nn.Conv2d(256+1, 1, 7, padding=3)
+        self.mask_conv_1 = nn.Conv2d(256+1, 1, 3, padding=1)
+        self.mask_conv_2 = nn.Conv2d(256+1, 1, 3, padding=1)
+        self.mask_conv_3 = nn.Conv2d(256+1, 1, 3, padding=1)
+        self.mask_conv_4 = nn.Conv2d(256+1, 1, 3, padding=1)
+
+        self.mask_convs = [self.mask_conv_0, self.mask_conv_1, self.mask_conv_2, self.mask_conv_3, self.mask_conv_4]
+        self.low_thresh = 0.2
+
+    def _init_target(self, img_tensor_shape, device, target=None):
+        target_ori_mask = target.get_field('masks').get_mask_tensor().unsqueeze(0).to(device)
+
+        target_shape = (1, target_ori_mask.shape[-3]) + img_tensor_shape
+        target_mask_pad_to_img = target_ori_mask.new(*target_shape).zero_()
+        target_mask_pad_to_img[:,:,:target.size[1], :target.size[0]] = target_ori_mask
+        
+        target_levels = {}
+        target_levels[0] = target_mask_pad_to_img
+        level_shape = ((img_tensor_shape[0]+1)//2, (img_tensor_shape[1]+1)//2)
+        target_levels[1] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[2] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[3] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[4] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[5] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[6] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+        level_shape = ((level_shape[0]+1)//2, (level_shape[1]+1)//2)
+        target_levels[7] = F.interpolate(target_mask_pad_to_img.float(), level_shape, mode='nearest').type(target_mask_pad_to_img.dtype)
+
+        # import pdb; pdb.set_trace()
+        # print([t.shape for t in target_levels.values()])
+        return target_levels
+   
+    def compute_mask(self, level, feature, pyramids, is_init=False):
+        for pyramid in pyramids:
+            if is_init:
+                last_mask = torch.zeros_like(feature[:,[0],:,:])
+                last_mask[0,0,pyramid.pos[0], pyramid.pos[1]] = 1.0
+            else:
+                last_mask = pyramid.get_mask(level-1)
+                up_size = tuple(feature.shape[-2:])
+                last_mask = F.interpolate(last_mask, up_size, mode='bilinear', align_corners=False)
+
+            conv_in = torch.cat((feature, last_mask), dim=1)
+            # TODO: self.mask_convs[level-pyramid.init_level]
+            mask = torch.sigmoid(self.mask_convs[level](conv_in))
+            pyramid.set_mask(level, mask)
+
+    def compute_loss(self, level, pyramids, target_levels):
+        losses = []
+        covered_idx = []
+        for pyramid in pyramids:
+            mask = pyramid.get_mask(level)
+            target = target_levels[7-level]
+            # import pdb; pdb.set_trace()
+            target_idx = target[0, :, pyramid.pos[0], pyramid.pos[1]].nonzero()
+
+            if len(target_idx):
+                if len(target_idx) > 1:
+                    target_idx = target[0, target_idx].view(len(target_idx),\
+                        -1).sum(1).argmin().unsqueeze(0).unsqueeze(0)
+                target_mask = target[:, [target_idx]]
+                pyramid.bind_target(target_idx)
+                covered_idx.append(target_idx)
+                loss = (mask - target_mask.float()).abs().mean()
+            else:
+                loss = (target.float().sum(dim=1).unsqueeze(1) * mask).mean()
+            losses.append(loss)
+        # TODO: 检查未被追踪的target_idx
+        # if not len(covered_idx):
+        #     import pdb; pdb.set_trace()
+        covered_idx = torch.cat(covered_idx).unique() if len(covered_idx) else []
+        missed_target = torch.nonzero(target[0].sum(dim=0).type(torch.bool)^target[0, covered_idx].sum(dim=0).type(torch.bool))
+        if len(missed_target):
+            # print('\n\n\n\nxxxxxxxxxxxxx\n', covered_idx, target.shape)
+            # import pdb; pdb.set_trace()
+            new_masks = torch.cat([i_p.get_mask(level) for i_p in pyramids], dim=1)
+            loss_miss = 2.0 * new_masks[0,:,missed_target[:,0], missed_target[:,1]].mean()
+            losses.append(loss_miss)
+
+        return losses
+        
+
 
     def forward(self, image, targets=None):
+        x_img = image.tensors
+        xs_r50 = self.r50(x_img)
+        fs_fpn = self.fpn(xs_r50)
+        N, _, img_size_h, img_size_w = x_img.shape
+        device = x_img.device
+        level_sizes = [tuple(f.shape[-2:]) for f in fs_fpn[::-1]]
+
+        losses = {}
+        losses_0 = []
+        losses_1 = []
+        losses_2 = []
+        losses_3 = []
+        losses_4 = []
+        for i in range(N):
+            if self.training:
+                target_levels = self._init_target((img_size_h, img_size_w ), device, targets[i])
+            
+            curr_level = 0
+            x_curr = fs_fpn[::-1][curr_level]
+            init_pos = torch.nonzero(torch.ones_like(x_curr[0][0]))
+            inst_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in init_pos]
+            self.compute_mask(curr_level, x_curr[[i]], inst_pyramids, True)
+            if self.training:
+                loss_0 = self.compute_loss(curr_level, inst_pyramids, target_levels)
+                losses_0.append(sum(loss for loss in loss_0))
+
+            curr_level = 1
+            x_curr = fs_fpn[::-1][curr_level]
+            # import pdb; pdb.set_trace()
+            self.compute_mask(curr_level, x_curr[[i]], inst_pyramids)
+            new_masks = torch.cat([i_p.get_mask(curr_level) for i_p in inst_pyramids], dim=1)
+            new_pos = torch.nonzero(new_masks[0].max(dim=0)[0] < self.low_thresh)
+            new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
+            self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
+            inst_pyramids += new_pyramids
+            if self.training:
+                loss_1 = self.compute_loss(curr_level, inst_pyramids, target_levels)
+                losses_1.append(sum(loss for loss in loss_1))
+
+            curr_level = 2
+            x_curr = fs_fpn[::-1][curr_level]
+            # import pdb; pdb.set_trace()
+            self.compute_mask(curr_level, x_curr[[i]], inst_pyramids)
+            new_masks = torch.cat([i_p.get_mask(curr_level) for i_p in inst_pyramids], dim=1)
+            new_pos = torch.nonzero(new_masks[0].max(dim=0)[0] < self.low_thresh)
+            new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
+            self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
+            inst_pyramids += new_pyramids
+            if self.training:
+                loss_2 = self.compute_loss(curr_level, inst_pyramids, target_levels)
+                losses_2.append(sum(loss for loss in loss_2))
+
+            # curr_level = 3
+            # x_curr = fs_fpn[::-1][curr_level]
+            # # import pdb; pdb.set_trace()
+            # self.compute_mask(curr_level, x_curr[[i]], inst_pyramids)
+            # new_masks = torch.cat([i_p.get_mask(curr_level) for i_p in inst_pyramids], dim=1)
+            # new_pos = torch.nonzero(new_masks[0].max(dim=0)[0] < self.low_thresh)
+            # new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
+            # self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
+            # inst_pyramids += new_pyramids
+            # if self.training:
+            #     loss_3 = self.compute_loss(curr_level, inst_pyramids, target_levels)
+            #     losses_3.append(sum(loss for loss in loss_3))
+            
+
+        losses['level_0']= sum(loss for loss in losses_0)
+        losses['level_1']= sum(loss for loss in losses_1)
+        losses['level_2']= sum(loss for loss in losses_2)
+        losses['level_3']= sum(loss for loss in losses_3)
+        losses['level_4']= sum(loss for loss in losses_4)
+        return losses
+
+
+class InstancePyramid():
+    def __init__(self, pos, init_pub_level, level_sizes):
+        self.init_level = init_pub_level
+        self.level_sizes = level_sizes
+        self.pos = pos
+        self.masks = {}
+        self.target_idx = None
+        self.is_alive = True
+
+    def set_mask(self, pub_level, mask):
+        self.masks[pub_level - self.init_level] = mask
+
+    
+    def get_mask(self, pub_level):
+        return self.masks[pub_level - self.init_level]
+
+    def bind_target(self, idx):
+        self.target_idx = idx
+
+    def compute_loss(self, target, pub_level):
         import pdb; pdb.set_trace()
-        print(type(image), type(targets))
+        
+
 
 def train(cfg, local_rank, distributed):
     # model = build_detection_model(cfg)
@@ -311,7 +519,7 @@ def main():
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     parser.add_argument(
         "--config-file",
-        default="mac/mask_first.yaml",
+        default="maskfirst/mask_first.yaml",
         metavar="FILE",
         help="path to config file",
         type=str,
