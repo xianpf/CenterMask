@@ -16,6 +16,28 @@
 # 实验准备
 - 对target进行精细化处理，把target的各个level的 groud truth 提前处理出来
 
+# mask生长流程
+1. 在 size1（7x10）的level上把每个pixel都初始化为一个mask pyramid
+2. 为每个mask pyramid 预测其mask （使用mask init conv）
+3. 将各个size1（7x10）的mask upsample 到size2（14x20）
+4. 找到所有的size2 mask的pixel，这些pixel在任何一个mask pyramid的mask上的值均小于 low threshold = 0.2
+5. 在这些找到的pixel上再初始化新的mask pyramid，并为其预测其mask （使用mask init conv）,使用不同target和loss计算方法 但都是L1 loss
+6. 在适当的时候，清理这些mask pyrimid that 他们的所有pixel都比不过别的pyramid 进不了前三
+7. 循环3 ～ 7
+
+
+
+# Ablation studies 几个需要测试的超参数点
+- [ ] ```self.mask_init_conv``` 考虑多层  3～5层3*3
+- [ ] ```self.score``` 考虑改用mask score rcnn
+- [ ] loss 先用L1 loss 后续测试l2 loss 以及cross entropy loss
+- [ ] 先不做nms，后面要用nms
+- [ ] 在预测各层mask的时候，现在是256+1，考虑256+2、3，添加位置指示点、上层mask等
+- [ ] 现在起始点是7x10，考虑4x5，2x4，1x2等等
+- [ ] 调节 low threshold
+- [ ] 对于mask conv，现在使用的是统一的逐层conv，后面考虑改到统一的按inst pyramid 实际情况使用统一的conv，长远还可探索基于类别的conv，以及conv的加深
+- [ ] 针对部分小件target被上层淹没的情况，给予淹没者严厉惩罚
+
 # 实验结果
 - ## CenterMask的官宣model结果
 - ## CenterMask的官宣原配置我run结果
@@ -38,3 +60,11 @@
         Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.474
         Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.610
     ```
+
+
+
+# 问题与解决
+- [ ] pyramids 的数量过于庞大，导致cuda memory 溢出
+  - 分析：一开始网络不成熟，导致乱生成的情况严重，随着网络成熟应该会好一些
+  - 解决办法：分步骤训练。先训练低分辨率的，成熟后导入较高分辨率，逐层训练
+  - 解决办法2：设置pyramids数量上限，达到数量后，在backward之前先裁掉mask分值低的那些，从而减少显存占用
