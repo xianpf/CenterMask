@@ -130,9 +130,13 @@ def do_train(
                     memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                 )
             )
+        if iteration % 100 == 0:
+            # import pdb; pdb.set_trace()
+            run_test(cfg, model, distributed=False, test_epoch=iteration)
+            model.train()
+            process_img()
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
-            # import pdb; pdb.set_trace()
             run_test(cfg, model, distributed=False, test_epoch=iteration)
             model.train()
         if iteration == max_iter:
@@ -262,8 +266,9 @@ class MaskFirst(nn.Module):
             new_masks = torch.cat([i_p.get_mask(level) for i_p in pyramids], dim=1)
             loss_miss = 2.0 * new_masks[0,:,missed_target[:,0], missed_target[:,1]].mean()
             losses.append(loss_miss)
-
-        return losses
+        
+        resloss = sum(loss for loss in losses) / len(losses)
+        return resloss
         
 
 
@@ -291,8 +296,19 @@ class MaskFirst(nn.Module):
             inst_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in init_pos]
             self.compute_mask(curr_level, x_curr[[i]], inst_pyramids, True)
             if self.training:
-                loss_0 = self.compute_loss(curr_level, inst_pyramids, target_levels)
-                losses_0.append(sum(loss for loss in loss_0))
+                losses_0.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
+            else:
+                import pdb; pdb.set_trace()
+                masks_0 = torch.cat([i_p.get_mask(0) for i_p in inst_pyramids], dim=1)
+                print(masks_0.shape, masks_0[0].max(dim=0)[0])
+                # recoverd_image = F.interpolate(image.tensors[:1,:, :image.image_sizes[0][0], :image.image_sizes[0][1]], 
+                img_np_1 = image.tensors[0].permute(1,2,0).detach().cpu().numpy()
+                img_np_2 = (img_np_1 - img_np_1.min())/(img_np_1.max() - img_np_1.min())
+                import matplotlib.pyplot as plt
+                plt.imshow(img_np_1)
+                plt.imsave('run/develop/img_0.jpg', img_np_2)
+                import cv2
+                cv2.imwrite('run/develop/img_0.jpg', img_np_2)
 
             curr_level = 1
             x_curr = fs_fpn[::-1][curr_level]
@@ -304,8 +320,7 @@ class MaskFirst(nn.Module):
             self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
             inst_pyramids += new_pyramids
             if self.training:
-                loss_1 = self.compute_loss(curr_level, inst_pyramids, target_levels)
-                losses_1.append(sum(loss for loss in loss_1))
+                losses_1.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
 
             curr_level = 2
             x_curr = fs_fpn[::-1][curr_level]
@@ -317,8 +332,10 @@ class MaskFirst(nn.Module):
             self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
             inst_pyramids += new_pyramids
             if self.training:
-                loss_2 = self.compute_loss(curr_level, inst_pyramids, target_levels)
-                losses_2.append(sum(loss for loss in loss_2))
+                losses_2.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
+            else:
+                # print([i_p.target_idx for i_p in inst_pyramids])
+                masks_all = torch.cat([i_p.get_mask(2) for i_p in inst_pyramids], dim=1)
 
             # curr_level = 3
             # x_curr = fs_fpn[::-1][curr_level]
@@ -515,6 +532,12 @@ def run_test(cfg, model, distributed, test_epoch=None):
         with open(output_folder+'/summaryStrs.txt', 'a') as f_summaryStrs:
             f_summaryStrs.write(summaryStrFinal)
 
+def process_img():
+    import pdb; pdb.set_trace()
+    import glob
+    # datasets/coco/val2014
+    imglist = glob(os.path.join(args.input, '*'))
+
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     parser.add_argument(
@@ -552,7 +575,8 @@ def main():
 
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-    # cfg.merge_from_list(['OUTPUT_DIR', 'run/fcos_imprv_R_50_FPN_1x/vals_1'])
+    cfg.merge_from_list(['OUTPUT_DIR', 'run/develop'])
+    cfg.merge_from_list(['MODEL.WEIGHT', 'run/try_2/model_0010000.pth'])
     cfg.freeze()
 
     output_dir = cfg.OUTPUT_DIR
