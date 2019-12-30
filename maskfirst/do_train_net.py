@@ -286,6 +286,7 @@ class MaskFirst(nn.Module):
         losses_2 = []
         losses_3 = []
         losses_4 = []
+        test_masks = []
         for i in range(N):
             if self.training:
                 target_levels = self._init_target((img_size_h, img_size_w ), device, targets[i])
@@ -295,20 +296,6 @@ class MaskFirst(nn.Module):
             init_pos = torch.nonzero(torch.ones_like(x_curr[0][0]))
             inst_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in init_pos]
             self.compute_mask(curr_level, x_curr[[i]], inst_pyramids, True)
-            if self.training:
-                losses_0.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
-            else:
-                import pdb; pdb.set_trace()
-                masks_0 = torch.cat([i_p.get_mask(0) for i_p in inst_pyramids], dim=1)
-                print(masks_0.shape, masks_0[0].max(dim=0)[0])
-                # recoverd_image = F.interpolate(image.tensors[:1,:, :image.image_sizes[0][0], :image.image_sizes[0][1]], 
-                img_np_1 = image.tensors[0].permute(1,2,0).detach().cpu().numpy()
-                img_np_2 = (img_np_1 - img_np_1.min())/(img_np_1.max() - img_np_1.min())
-                import matplotlib.pyplot as plt
-                plt.imshow(img_np_1)
-                plt.imsave('run/develop/img_0.jpg', img_np_2)
-                import cv2
-                cv2.imwrite('run/develop/img_0.jpg', img_np_2)
 
             curr_level = 1
             x_curr = fs_fpn[::-1][curr_level]
@@ -319,8 +306,6 @@ class MaskFirst(nn.Module):
             new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
             self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
             inst_pyramids += new_pyramids
-            if self.training:
-                losses_1.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
 
             curr_level = 2
             x_curr = fs_fpn[::-1][curr_level]
@@ -331,24 +316,17 @@ class MaskFirst(nn.Module):
             new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
             self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
             inst_pyramids += new_pyramids
+
+
+
+
             if self.training:
+                losses_0.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
+                losses_1.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
                 losses_2.append(self.compute_loss(curr_level, inst_pyramids, target_levels))
             else:
-                # print([i_p.target_idx for i_p in inst_pyramids])
-                masks_all = torch.cat([i_p.get_mask(2) for i_p in inst_pyramids], dim=1)
+                test_masks.append(inst_pyramids)
 
-            # curr_level = 3
-            # x_curr = fs_fpn[::-1][curr_level]
-            # # import pdb; pdb.set_trace()
-            # self.compute_mask(curr_level, x_curr[[i]], inst_pyramids)
-            # new_masks = torch.cat([i_p.get_mask(curr_level) for i_p in inst_pyramids], dim=1)
-            # new_pos = torch.nonzero(new_masks[0].max(dim=0)[0] < self.low_thresh)
-            # new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
-            # self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
-            # inst_pyramids += new_pyramids
-            # if self.training:
-            #     loss_3 = self.compute_loss(curr_level, inst_pyramids, target_levels)
-            #     losses_3.append(sum(loss for loss in loss_3))
             
 
         losses['level_0']= sum(loss for loss in losses_0)
@@ -356,7 +334,7 @@ class MaskFirst(nn.Module):
         losses['level_2']= sum(loss for loss in losses_2)
         losses['level_3']= sum(loss for loss in losses_3)
         losses['level_4']= sum(loss for loss in losses_4)
-        return losses
+        return losses if self.training else test_masks
 
 
 class InstancePyramid():
@@ -380,6 +358,21 @@ class InstancePyramid():
 
     def compute_loss(self, target, pub_level):
         import pdb; pdb.set_trace()
+
+    def get_root_response(self, pub_level):
+        init_size = self.level_sizes[self.init_level]
+        req_size = self.level_sizes[pub_level]
+        # h1 = (self.pos[0].float() / init_size[0] * req_size[0]).floor()
+        # h2 = ((self.pos[0].float()+1) / init_size[0] * req_size[0]).ceil()
+        # w1 = (self.pos[1].float() / init_size[1] * req_size[1]).floor()
+        # w2 = ((self.pos[1].float()+1) / init_size[1] * req_size[1]).ceil()
+
+        h = (self.pos[0].float() / init_size[0] * req_size[0]).round().long()
+        w = (self.pos[1].float() / init_size[1] * req_size[1]).round().long()
+
+        points = self.masks[pub_level - self.init_level][0,0,h, w]
+
+        return points
         
 
 
