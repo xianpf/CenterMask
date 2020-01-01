@@ -130,11 +130,11 @@ def do_train(
                     memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                 )
             )
-        if iteration % 100 == 0:
-            # import pdb; pdb.set_trace()
-            run_test(cfg, model, distributed=False, test_epoch=iteration)
-            model.train()
-            process_img()
+        # if iteration % 100 == 0:
+        #     # import pdb; pdb.set_trace()
+        #     run_test(cfg, model, distributed=False, test_epoch=iteration)
+        #     model.train()
+        #     process_img()
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
             run_test(cfg, model, distributed=False, test_epoch=iteration)
@@ -253,7 +253,9 @@ class MaskFirst(nn.Module):
                 covered_idx.append(target_idx)
                 loss = (mask - target_mask.float()).abs().mean()
             else:
-                loss = (target.float().sum(dim=1).unsqueeze(1) * mask).mean()
+                # 问题出在这里：要element product
+                # loss = (target.float().sum(dim=1).unsqueeze(1) * mask).mean()
+                loss = (target.float().sum(dim=1).unsqueeze(1) * mask).mean() * 5.0
             losses.append(loss)
         # TODO: 检查未被追踪的target_idx
         # if not len(covered_idx):
@@ -487,6 +489,7 @@ def get_neat_inference_result(coco_eval):
     return summaryStrs
 
 def run_test(cfg, model, distributed, test_epoch=None):
+    return 0
     if distributed:
         model = model.module
     torch.cuda.empty_cache()  # TODO check if it helps
@@ -568,8 +571,8 @@ def main():
 
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-    cfg.merge_from_list(['OUTPUT_DIR', 'run/develop'])
-    cfg.merge_from_list(['MODEL.WEIGHT', 'run/try_2/model_0010000.pth'])
+    # cfg.merge_from_list(['OUTPUT_DIR', 'run/develop'])
+    # cfg.merge_from_list(['MODEL.WEIGHT', 'run/try_2/model_0010000.pth'])
     cfg.freeze()
 
     output_dir = cfg.OUTPUT_DIR
