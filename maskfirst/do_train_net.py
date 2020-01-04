@@ -184,6 +184,9 @@ class MaskFirst(nn.Module):
         self.fcos = FCOSModule(cfg, 256)
         self.p7p6conv = nn.Conv2d(256, 1, 1)
         self.mask_conv_0 = nn.Conv2d(256+1, 1, 7, padding=3)
+        # self.mask_conv_0_0 = nn.Conv2d(256+1, 256, 3, padding=3)
+        # self.mask_conv_0_1 = nn.Conv2d(256, 256, 3, padding=3)
+        # self.mask_conv_0_2 = nn.Conv2d(256, 1, 3, padding=3)
         self.mask_conv_1 = nn.Conv2d(256+1, 1, 3, padding=1)
         self.mask_conv_2 = nn.Conv2d(256+1, 1, 3, padding=1)
         self.mask_conv_3 = nn.Conv2d(256+1, 1, 3, padding=1)
@@ -233,13 +236,13 @@ class MaskFirst(nn.Module):
     def compute_mask(self, level, feature, pyramids, is_init=False):
         for pyramid in pyramids:
             if is_init:
-                last_mask = torch.zeros_like(feature[:,[0],:,:])
-                last_mask[0,0,pyramid.pos[0], pyramid.pos[1]] = 1.0
+                last_mask = pyramid.get_feature_gaussian_mask(level, feature.shape[-2:])[None, None,:,:].to(feature.device)
             else:
                 last_mask = pyramid.get_mask(level-1)
                 up_size = tuple(feature.shape[-2:])
                 last_mask = F.interpolate(last_mask, up_size, mode='bilinear', align_corners=False)
 
+            # 把cat 改成 高斯mask相乘， ablation study
             conv_in = torch.cat((feature, last_mask), dim=1)
             # TODO: self.mask_convs[level-pyramid.init_level]
             mask = torch.sigmoid(self.mask_convs[level](conv_in))
@@ -356,6 +359,9 @@ class InstancePyramid():
         self.masks = {}
         self.target_idx = None
         self.is_alive = True
+        # torch.tensor(800.0/2**(7-self.init_level)).ceil().long().item()
+        self.feature_scales = [7, 13, 25, 50, 100, 200]
+        self.gaussian_masks = self.generate_gaussian_masks()
 
     def set_mask(self, pub_level, mask):
         self.masks[pub_level - self.init_level] = mask
@@ -369,6 +375,16 @@ class InstancePyramid():
 
     def compute_loss(self, target, pub_level):
         import pdb; pdb.set_trace()
+
+
+    def get_root_level_pos(self, pub_level):
+        init_size = self.level_sizes[self.init_level]
+        req_size = self.level_sizes[pub_level]
+
+        h = (self.pos[0].float() / init_size[0] * req_size[0]).round().long()
+        w = (self.pos[1].float() / init_size[1] * req_size[1]).round().long()
+
+        return (h.item(), w.item())
 
     def get_root_response(self, pub_level):
         init_size = self.level_sizes[self.init_level]
@@ -384,8 +400,29 @@ class InstancePyramid():
         points = self.masks[pub_level - self.init_level][0,0,h, w]
 
         return points
-        
 
+    def generate_gaussian_masks(self):
+        # torch.tensor(800.0/2**(7-self.init_level)).ceil().long().item()
+        # feature_scales = [7, 13, 25, 50, 100, 200]
+        gaussian_masks = []
+        for i in range(len(self.feature_scales)):
+            f_scale = self.feature_scales[i]
+            xs = torch.arange(f_scale*4)
+            ys = torch.arange(f_scale*4).view(-1,1)
+            gaussian_masks.append((-4*(torch.tensor(2.0)).log()*((xs.float()-f_scale*\
+                2+1)**2+(ys.float()-f_scale*2+1)**2)/f_scale**2).exp())
+
+        return gaussian_masks
+
+    def get_feature_gaussian_mask(self, pub_level, feature_size):
+        # gaussian_mask = self.gaussian_masks[pub_level - self.init_level]
+        feature_size = tuple(feature_size)
+        gaussian_mask = self.gaussian_masks[pub_level]
+        level_pos = self.get_root_level_pos(pub_level)
+        ctr = (self.feature_scales[pub_level]*2-1,)*2
+        feature_g_mask = gaussian_mask[ctr[0]-level_pos[0]:ctr[0]-level_pos[0]+feature_size[0], \
+            ctr[1]-level_pos[1]:ctr[1]-level_pos[1]+feature_size[1]]
+        return feature_g_mask
 
 def train(cfg, local_rank, distributed):
     # model = build_detection_model(cfg)
