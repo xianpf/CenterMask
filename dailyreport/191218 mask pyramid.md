@@ -37,6 +37,7 @@
 - [ ] 调节 low threshold
 - [ ] 对于mask conv，现在使用的是统一的逐层conv，后面考虑改到统一的按inst pyramid 实际情况使用统一的conv，长远还可探索基于类别的conv，以及conv的加深
 - [ ] 针对部分小件target被上层淹没的情况，给予淹没者严厉惩罚
+- [ ] mask instance pyramid 部分一定要参考unet的up部分，现在感觉小scale对大一点scale的影响不够有效
 
 # 实验结果
 - ## CenterMask的官宣model结果
@@ -81,3 +82,10 @@
   - 分析：给256层feature施加影响的方式却只有新增一个维度的position指示，这影响太弱了，而且这一层几乎全是0，很多层并不会给它很大的weight
   - 解决办法：生成高斯mask，强行乘到256层的feature上来施加影响
   - 解决办法2:生成高斯mask，并到256层之外，由训练参数来调和其强度
+
+
+
+$$p(x)=\frac{1}{\sqrt{(2\pi)^n det\Sigma}}e^{-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)}$$
+
+$$p(x)=\frac{1}{\sqrt{2\pi}\sigma}\exp\left(-\frac{1}{2}(\frac{x-\mu}{\sigma})^2\right)$$
+$$p(x)=\exp\left(-ln2(\frac{x-\mu}{\rho})^2\right)$$
