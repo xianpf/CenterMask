@@ -45,6 +45,8 @@ def align_and_update_state_dicts(model_state_dict, loaded_state_dict):
         if idx_old == -1:
             continue
         key = current_keys[idx_new]
+        if key.startswith('mask_conv'):
+            continue
         key_old = loaded_keys[idx_old]
         model_state_dict[key] = loaded_state_dict[key_old]
         logger.info(
