@@ -716,9 +716,9 @@ def train(cfg, local_rank, distributed):
     # arguments.update(extra_checkpoint_data)
 
     # import pdb; pdb.set_trace()
-    torch.save(model.r50.state_dict(), 'run/r50torch.pth')
+    # # # # torch.save(model.r50.state_dict(), 'run/ImageNetPretrainedR50torch.pth')
 
-    # model.r50.load_state_dict(torch.load('run/r50torch.pth'))
+    model.r50.load_state_dict(torch.load('run/ImageNetPretrainedR50torch.pth'))
     # model_state = model.state_dict()
     # modify_dict = torch.load('run/try_v13/model_0090000.pth')['model']
 
