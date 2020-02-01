@@ -75,7 +75,6 @@ def do_train(
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
     for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
-        print('Running Iteration', iteration)
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
@@ -138,9 +137,11 @@ def do_train(
                     memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                 )
             )
-            logger.info("# of instances: level 0: {}\t|level 1: {}\t|level 2: {}\t|level 3: {}\t|level 4: {}\t|level 5: {}".format(
-                model.log_dict['pyr_num_l0'], model.log_dict['pyr_num_l1'], model.log_dict['pyr_num_l2'], 0, 0, 0))
-            logger.info("# of instances counts: {}".format(model.log_dict['InstPyr_inst_count']))
+            logger.info("# of instances: level 0: {}\t|level 1: {}\t|level 2: {}\t|'+\
+                'level 3: {}\t|level 4: {}\t|level 5: {} | # of instances counts: {}".format(
+                model.log_dict['pyr_num_l0'], model.log_dict['pyr_num_l1'], 
+                model.log_dict['pyr_num_l2'], model.log_dict['pyr_num_l3'], 0, 0, model.log_dict['InstPyr_inst_count']))
+            # logger.info("# of instances counts: {}".format(model.log_dict['InstPyr_inst_count']))
         # if iteration % 100 == 0:
         #     # import pdb; pdb.set_trace()
         #     run_test(cfg, model, distributed=False, test_epoch=iteration)
@@ -703,8 +704,8 @@ class MaskPyramids(nn.Module):
 
         new_occupy = 1.0*len(new_pos) / x_curr.shape[-2] / x_curr.shape[-1]
         # if new_occupy > 0.5 or len(new_pos) <8:
-        if new_occupy > 0.5 or len(new_pos) <8-1:
-            print('new_occupy:{}| len(new_pos):{}'.format(new_occupy, len(new_pos)))
+        # if new_occupy > 0.5 or len(new_pos) <8-1:
+        #     print('new_occupy:{}| len(new_pos):{}'.format(new_occupy, len(new_pos)))
             # import pdb; pdb.set_trace()
         new_pyramids = [InstancePyramid(pos, curr_level, level_sizes) for pos in new_pos]
         self.compute_mask(curr_level, x_curr[[i]], new_pyramids, True)
@@ -751,7 +752,7 @@ class MaskPyramids(nn.Module):
         xs_r50.append(self.res_layer_5(xs_r50[-1]))
         xs_r50.append(self.res_layer_6(xs_r50[-1]))
 
-        print('r50 max values:', [f.max().item() for f in xs_r50])
+        # print('r50 max values:', [f.max().item() for f in xs_r50])
 
         N, _, img_size_h, img_size_w = x_img.shape
         device = x_img.device
@@ -866,7 +867,6 @@ class InstancePyramid():
 
     def compute_loss(self, target, pub_level):
         import pdb; pdb.set_trace()
-
 
     def get_root_level_pos(self, pub_level):
         init_size = self.level_sizes[self.init_level]
@@ -1126,11 +1126,11 @@ def main():
 
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-    cfg.merge_from_list(['OUTPUT_DIR', 'run/scratch_v14_oneshot'])
+    cfg.merge_from_list(['OUTPUT_DIR', 'run/scratch_v15'])
     cfg.merge_from_list(['MODEL.WEIGHT', ''])
     # cfg.merge_from_list(['MODEL.WEIGHT', 'run/scratch_v14/model_0090000.pth'])
     cfg.merge_from_list(['SOLVER.IMS_PER_BATCH', 1])
-    cfg.merge_from_list(['SOLVER.BASE_LR', 1e-3])
+    # cfg.merge_from_list(['SOLVER.BASE_LR', 1e-3])
     cfg.freeze()
 
     output_dir = cfg.OUTPUT_DIR
