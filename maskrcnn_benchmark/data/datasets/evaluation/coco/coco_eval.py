@@ -20,6 +20,7 @@ def do_coco_evaluation(
     expected_results_sigma_tol,
 ):
     logger = logging.getLogger("maskrcnn_benchmark.inference")
+    # import pdb; pdb.set_trace()
 
     if box_only:
         logger.info("Evaluating bbox proposals")
@@ -106,6 +107,7 @@ def prepare_for_coco_detection(predictions, dataset):
 def prepare_for_coco_segmentation(predictions, dataset):
     import pycocotools.mask as mask_util
     import numpy as np
+    import pdb; pdb.set_trace()
 
     masker = Masker(threshold=0.5, padding=1)
     # assert isinstance(dataset, COCODataset)
