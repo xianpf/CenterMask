@@ -273,12 +273,12 @@ MODEL:
     USE_GN: false
   WEIGHT: catalog://ImageNetPretrained/MSRA/R-50
 # OUTPUT_DIR: run/CenterMask-R-50-FPN-1x
-OUTPUT_DIR: run/try_1
+OUTPUT_DIR: run/try_v14
 PATHS_CATALOG: maskrcnn_benchmark/config/paths_catalog.py
 SOLVER:
   BASE_LR: 0.01
   BIAS_LR_FACTOR: 2
-  CHECKPOINT_PERIOD: 10000
+  CHECKPOINT_PERIOD: 5000 # 10000
   GAMMA: 0.1
   # IMS_PER_BATCH: 4
   IMS_PER_BATCH: 2
