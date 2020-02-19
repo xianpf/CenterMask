@@ -286,7 +286,7 @@ class ResNet50(nn.Module):
         
         return outputs
 
-# v19 feature: 共享同一个bgm层
+# v19 feature: 共享同一个bg层
 class MaskPyramids(nn.Module):
     def old__init__(self, cfg):
         super(MaskPyramids, self).__init__()
@@ -545,7 +545,7 @@ class MaskPyramids(nn.Module):
         # covered_idx = []
         for pyramid in pyramids:
             mask_logits = pyramid.get_mask(level)
-            if pyramid.target_idx:
+            if pyramid.target_idx is not None:
                 target_mask = target_levels[7-level][0, [pyramid.target_idx]]
                 loss_cs = self.cs_criteron(mask_logits, target_mask.squeeze(1).long())
                 losses.append(loss_cs)
@@ -595,9 +595,7 @@ class MaskPyramids(nn.Module):
                 target_idx_int = target_idx[0].item()
                 target_support_pyramids[target_idx_int].append(pyr.idx)
                 # 解决一个pixel 多个target 的问题， 核心：(小target优先)， 已分配的不改
-                if pyr.target_idx:
-                    # print('target_idxs', target_idxs)
-                    # print('pyr.target_idx:', pyr.target_idx)
+                if pyr.target_idx is not None:
                     target_map_last = target_levels[7-level][0, pyr.target_idx]
                     target_map_now = target_levels[7-level][0, target_idx_int]
                     # 重叠的上一个已经有其他pixel选项了， 让其让路
