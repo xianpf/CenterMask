@@ -286,7 +286,7 @@ class ResNet50(nn.Module):
         
         return outputs
 
-# v17 feature: 同图同gaussian map
+# v17 feature: 同gaussian map, midchannel 64
 class MaskPyramids(nn.Module):
     def old__init__(self, cfg):
         super(MaskPyramids, self).__init__()
