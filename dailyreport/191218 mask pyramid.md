@@ -38,6 +38,7 @@
 - [ ] 对于mask conv，现在使用的是统一的逐层conv，后面考虑改到统一的按inst pyramid 实际情况使用统一的conv，长远还可探索基于类别的conv，以及conv的加深
 - [ ] 针对部分小件target被上层淹没的情况，给予淹没者严厉惩罚
 - [ ] mask instance pyramid 部分一定要参考unet的up部分，现在感觉小scale对大一点scale的影响不够有效
+- [ ] 使用统一的gaussian mask， 因为虽不同level，但是管辖的像素范围应当是一致的
 
 # 实验结果
 - ## CenterMask的官宣model结果
@@ -84,9 +85,14 @@
   - 解决办法2:生成高斯mask，并到256层之外，由训练参数来调和其强度
     - 并1层还是没用，考虑全加。可能是因为后续只有1层conv所致，考虑增加conv
 - [X] 由于sigmoid的线性区太窄，导致结果非1即0
+- [ ] 逐级训练的trick太慢，导致调参周期太长，考虑限制新增pyramids数量 V15
+
+- [ ] resnet 50 在l3 输出的值一下子飙升到10^23 甚至 nan，这问题很大，导致后面的工作没办法做
 
 
 - [ ] target 的 level化比较失败，考虑修改方式
+
+- [x] pyr.target_idx == 0 的情况都被丢了， 应该判断pyr.target_idx is not None
 
 $$p(x)=\frac{1}{\sqrt{(2\pi)^n det\Sigma}}e^{-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu)}$$
 
