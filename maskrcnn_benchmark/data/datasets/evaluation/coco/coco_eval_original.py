@@ -5,8 +5,7 @@ import torch
 from collections import OrderedDict
 from tqdm import tqdm
 
-# from maskrcnn_benchmark.modeling.roi_heads.mask_head.inference import Masker
-from maskfirst.masker import Masker
+from maskrcnn_benchmark.modeling.roi_heads.mask_head.inference import Masker
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 
@@ -108,7 +107,7 @@ def prepare_for_coco_detection(predictions, dataset):
 def prepare_for_coco_segmentation(predictions, dataset):
     import pycocotools.mask as mask_util
     import numpy as np
-    # import pdb; pdb.set_trace()
+    import pdb; pdb.set_trace()
 
     masker = Masker(threshold=0.5, padding=1)
     # assert isinstance(dataset, COCODataset)
