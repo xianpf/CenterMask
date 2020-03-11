@@ -575,7 +575,7 @@ class MaskPyramids(nn.Module):
             masks_none = torch.cat(masks_none_list).mean(0)[None, None]
         else:
             # import pdb; pdb.set_trace()
-            masks_none_list = torch.zeros_like(pyramids[0].get_mask(level)[:,[1]])
+            masks_none = torch.zeros_like(pyramids[0].get_mask(level)[:,[1]])
         masks_for_loss.append(masks_none)
         # 修改遍历目标 来 容纳 未被覆盖target
         for target_idx in range(target_levels[7-level].shape[1]):
