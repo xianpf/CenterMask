@@ -423,6 +423,7 @@ class MaskPyramids(nn.Module):
         return target_levels
    
     def _init_target(self, img_tensor_shape, device, target=None):
+        # import pdb; pdb.set_trace()
         target_ori_mask = target.get_field('masks').get_mask_tensor().unsqueeze(0).to(device)
 
         target_shape = (1, target_ori_mask.shape[-3]) + img_tensor_shape
@@ -462,6 +463,7 @@ class MaskPyramids(nn.Module):
             class_logits_7x7 = F.interpolate(class_logits, (7, 7), mode='bilinear')
             class_logits = self.cls_score(class_logits_7x7.view(class_logits_7x7.shape[0],-1))
             pyramid.class_logits = class_logits
+            pyramid.masked_class_logits = masked_class_logits
 
             if pyramid.target_idx is not None:
                 # import pdb; pdb.set_trace()
